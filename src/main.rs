@@ -1,14 +1,12 @@
 // #![feature(try_trait)]
 use crate::utils::{fstderr, fstdout};
 use builder::FlakyFinderBuilder;
-use crossbeam_channel;
 use error::FlakyFinderResult;
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
 use std::{
     io::{stdout, Write},
     process::{Command, ExitStatus, Output},
 };
-use threadpool;
 
 mod builder;
 mod cli;
@@ -35,7 +33,7 @@ pub(crate) struct FlakyFinder {
 
 impl FlakyFinder {
     /// Runs a command multiple time trying to find if it can fail at some point.
-    pub(crate) fn run(&mut self) -> FlakyFinderResult<()> {
+    pub(crate) fn run(&mut self) -> FlakyFinderResult<bool> {
         let runs = self.runs;
         let nb_threads = self.nb_threads;
         let cmd = &self.cmd;
@@ -107,7 +105,6 @@ impl FlakyFinder {
                 }
                 self.outputs.push(recv_output.clone());
             }
-            // ::std::thread::sleep(::std::time::Duration::from_millis(1000));
         }
 
         drop(rx);
@@ -120,7 +117,7 @@ impl FlakyFinder {
             self.show_errors()?;
         }
 
-        Ok(())
+        Ok(self.outputs.is_empty())
     }
 
     /// Print out all the errors we found.
@@ -149,14 +146,18 @@ impl FlakyFinder {
     }
 }
 
-fn main() -> FlakyFinderResult<()> {
-    let mut ff = FlakyFinderBuilder::from_cli()?.build();
+fn main() -> std::result::Result<(), &'static str> {
+    let mut ff = FlakyFinderBuilder::from_cli()
+        .expect("Failed to build")
+        .build();
     if ff.runs < 1 {
         panic!("Number of 'runs' has to be > 0.")
-    } else {
-        ff.run().expect("Fail to processes.");
     }
 
+    let good = ff.run().expect("Fail to processes.");
+    if !good {
+        return Err("Flaky tests found");
+    }
     Ok(())
 }
 
